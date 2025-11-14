@@ -1,7 +1,7 @@
 {
   "name": "discord-ticket-bot",
   "version": "1.0.0",
-  "description": "Bot de tickets para Discord",
+  "description": "Bot de tickets para Discord com sistema completo",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -11,10 +11,19 @@
     "discord.js": "^14.14.1",
     "dotenv": "^16.3.1"
   },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
   "engines": {
     "node": ">=18.0.0"
   },
-  "keywords": ["discord", "bot", "tickets"],
+  "keywords": [
+    "discord",
+    "bot",
+    "tickets",
+    "support",
+    "moderation"
+  ],
   "author": "Seu Nome",
   "license": "MIT"
 }
