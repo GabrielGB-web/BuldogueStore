@@ -1,5 +1,17 @@
-const { ChannelType, PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
-const ticketDB = new Map();
+const { 
+    ChannelType, 
+    PermissionsBitField, 
+    ActionRowBuilder, 
+    ButtonBuilder, 
+    ButtonStyle, 
+    EmbedBuilder, 
+    StringSelectMenuBuilder, 
+    ModalBuilder, 
+    TextInputBuilder, 
+    TextInputStyle 
+} = require('discord.js');
+
+const ticketDB = new Map(); // Em produção, use um banco de dados real
 
 module.exports = {
     name: 'interactionCreate',
@@ -28,6 +40,23 @@ module.exports = {
         // Modal para adicionar membro
         if (interaction.isModalSubmit() && interaction.customId === 'add-member-modal') {
             await handleAddMemberModal(interaction);
+        }
+
+        // Comandos de slash
+        if (interaction.isChatInputCommand()) {
+            const command = interaction.client.commands.get(interaction.commandName);
+
+            if (!command) return;
+
+            try {
+                await command.execute(interaction);
+            } catch (error) {
+                console.error(error);
+                await interaction.reply({ 
+                    content: '❌ Ocorreu um erro ao executar este comando!', 
+                    ephemeral: true 
+                });
+            }
         }
     }
 };
@@ -172,7 +201,9 @@ async function handleTicketCreation(interaction) {
                 SendMessages: true,
                 ReadMessageHistory: true,
                 ManageMessages: true,
-                ManageChannels: true
+                ManageChannels: true,
+                EmbedLinks: true,
+                AttachFiles: true
             });
         }
 
@@ -245,8 +276,91 @@ async function handleTicketCreation(interaction) {
     }
 }
 
-// ... (outras funções handleTicketButtons, notifyUser, etc. mantêm iguais ao código anterior)
-// Adicione a função handleAddMemberModal:
+async function handleTicketButtons(interaction) {
+    const ticketData = ticketDB.get(interaction.channel.id);
+    
+    if (!ticketData) {
+        return await interaction.reply({ 
+            content: '❌ Este canal não é um ticket válido ou os dados foram perdidos.', 
+            ephemeral: true 
+        });
+    }
+
+    // Verificar permissões (apenas staff pode usar os botões)
+    const hasPermission = interaction.member.roles.cache.some(role => 
+        role.name === ticketData.staffRole || interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)
+    );
+
+    if (!hasPermission) {
+        return await interaction.reply({ 
+            content: '❌ Você não tem permissão para usar este comando! Apenas staff pode usar os botões do ticket.', 
+            ephemeral: true 
+        });
+    }
+
+    switch (interaction.customId) {
+        case 'notify-user':
+            await notifyUser(interaction, ticketData);
+            break;
+        
+        case 'add-member':
+            await addMember(interaction, ticketData);
+            break;
+        
+        case 'claim-ticket':
+            await claimTicket(interaction, ticketData);
+            break;
+
+        case 'transcript-ticket':
+            await transcriptTicket(interaction, ticketData);
+            break;
+        
+        case 'close-ticket':
+            await closeTicket(interaction, ticketData);
+            break;
+    }
+}
+
+async function notifyUser(interaction, ticketData) {
+    try {
+        const user = await interaction.guild.members.fetch(ticketData.userId);
+        const notifyEmbed = new EmbedBuilder()
+            .setTitle('📢 Notificação do Staff')
+            .setDescription(`${user}, por favor, aguarde atendimento. Um membro da equipe irá te ajudar em breve.\n\nSe você tiver mais informações para adicionar, por favor, compartilhe agora.`)
+            .setColor(0x00FF00)
+            .setTimestamp();
+
+        await interaction.channel.send({ 
+            content: `${user}`,
+            embeds: [notifyEmbed] 
+        });
+        await interaction.reply({ content: '✅ Usuário notificado com sucesso!', ephemeral: true });
+    } catch (error) {
+        await interaction.reply({ 
+            content: '❌ Erro ao notificar o usuário. O usuário pode ter saído do servidor.', 
+            ephemeral: true 
+        });
+    }
+}
+
+async function addMember(interaction, ticketData) {
+    // Criar modal para adicionar membro
+    const modal = new ModalBuilder()
+        .setCustomId('add-member-modal')
+        .setTitle('Adicionar Membro ao Ticket');
+
+    const userIdInput = new TextInputBuilder()
+        .setCustomId('userId')
+        .setLabel('ID do Usuário para Adicionar')
+        .setPlaceholder('Digite o ID do usuário...')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+    const actionRow = new ActionRowBuilder().addComponents(userIdInput);
+    modal.addComponents(actionRow);
+
+    await interaction.showModal(modal);
+}
 
 async function handleAddMemberModal(interaction) {
     const userId = interaction.fields.getTextInputValue('userId');
@@ -255,21 +369,204 @@ async function handleAddMemberModal(interaction) {
     if (!ticketData) return;
 
     try {
-        const member = await interaction.guild.members.fetch(userId);
+        const member = await interaction.guild.members.fetch(userId.trim());
+        
         await interaction.channel.permissionOverwrites.edit(member, {
             ViewChannel: true,
             SendMessages: true,
-            ReadMessageHistory: true
+            ReadMessageHistory: true,
+            AttachFiles: true,
+            EmbedLinks: true
         });
 
+        const successEmbed = new EmbedBuilder()
+            .setTitle('✅ Membro Adicionado')
+            .setDescription(`${member} foi adicionado ao ticket com sucesso!`)
+            .setColor(0x00FF00)
+            .setTimestamp();
+
         await interaction.reply({ 
-            content: `✅ ${member} foi adicionado ao ticket!`, 
-            ephemeral: false 
+            embeds: [successEmbed]
         });
+
+        // Notificar no ticket sobre o novo membro
+        const notifyEmbed = new EmbedBuilder()
+            .setTitle('👤 Novo Membro no Ticket')
+            .setDescription(`${member} foi adicionado ao ticket por ${interaction.user}`)
+            .setColor(0x0099FF)
+            .setTimestamp();
+
+        await interaction.channel.send({ embeds: [notifyEmbed] });
+
     } catch (error) {
+        console.error('Erro ao adicionar membro:', error);
+        const errorEmbed = new EmbedBuilder()
+            .setTitle('❌ Erro ao Adicionar Membro')
+            .setDescription('Não foi possível encontrar o usuário. Verifique se o ID está correto e se o usuário está no servidor.')
+            .setColor(0xFF0000)
+            .setTimestamp();
+
         await interaction.reply({ 
-            content: '❌ Não foi possível encontrar o usuário. Verifique o ID fornecido.', 
+            embeds: [errorEmbed],
             ephemeral: true 
         });
+    }
+}
+
+async function claimTicket(interaction, ticketData) {
+    if (ticketData.claimedBy) {
+        try {
+            const claimedBy = await interaction.guild.members.fetch(ticketData.claimedBy);
+            return await interaction.reply({ 
+                content: `❌ Este ticket já foi assumido por ${claimedBy}`, 
+                ephemeral: true 
+            });
+        } catch (error) {
+            // Se não conseguir encontrar o membro, limpa o claimedBy
+            ticketData.claimedBy = null;
+        }
+    }
+
+    ticketData.claimedBy = interaction.user.id;
+    ticketDB.set(interaction.channel.id, ticketData);
+
+    const claimEmbed = new EmbedBuilder()
+        .setTitle('🎯 Ticket Assumido')
+        .setDescription(`${interaction.user} assumiu este ticket e irá te ajudar.`)
+        .setColor(0x00FF00)
+        .addFields(
+            { name: '👤 Staff Responsável', value: `${interaction.user.tag}`, inline: true },
+            { name: '⏰ Horário', value: new Date().toLocaleString('pt-BR'), inline: true }
+        )
+        .setTimestamp();
+
+    await interaction.channel.send({ embeds: [claimEmbed] });
+    await interaction.reply({ content: '✅ Ticket assumido com sucesso!', ephemeral: true });
+}
+
+async function transcriptTicket(interaction, ticketData) {
+    // Função simplificada para transcript
+    // Em produção, implemente um sistema completo de transcript
+    try {
+        const messages = await interaction.channel.messages.fetch({ limit: 100 });
+        let transcript = `Transcript do Ticket - ${ticketData.type}\n`;
+        transcript += `Aberto por: ${ticketData.userId}\n`;
+        transcript += `Data: ${new Date().toLocaleString('pt-BR')}\n`;
+        transcript += `Canal: ${interaction.channel.name}\n\n`;
+        transcript += 'Mensagens:\n\n';
+
+        messages.reverse().forEach(message => {
+            const timestamp = new Date(message.createdTimestamp).toLocaleString('pt-BR');
+            transcript += `[${timestamp}] ${message.author.tag}: ${message.content}\n`;
+        });
+
+        // Em produção, salve em um arquivo e envie para um canal de logs
+        await interaction.reply({ 
+            content: '📄 Transcript gerado (funcionalidade básica). Em produção, isso salvaria em um arquivo.',
+            ephemeral: true 
+        });
+
+        console.log('Transcript:', transcript); // Apenas para demonstração
+
+    } catch (error) {
+        console.error('Erro ao gerar transcript:', error);
+        await interaction.reply({ 
+            content: '❌ Erro ao gerar transcript.', 
+            ephemeral: true 
+        });
+    }
+}
+
+async function closeTicket(interaction, ticketData) {
+    if (ticketData.closed) {
+        return await interaction.reply({ 
+            content: '❌ Este ticket já está fechado.', 
+            ephemeral: true 
+        });
+    }
+
+    const closeEmbed = new EmbedBuilder()
+        .setTitle('🔒 Ticket Fechado')
+        .setDescription(`Este ticket foi fechado por ${interaction.user.tag}`)
+        .addFields(
+            { name: '👤 Fechado por', value: `${interaction.user.tag}`, inline: true },
+            { name: '🎫 Tipo', value: ticketData.type, inline: true },
+            { name: '⏰ Duração', value: calculateDuration(ticketData.createdAt), inline: true },
+            { name: '📅 Data de Abertura', value: ticketData.createdAt.toLocaleString('pt-BR'), inline: false }
+        )
+        .setColor(0xFF0000)
+        .setTimestamp();
+
+    // Desativar botões
+    const disabledButtons = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('notify-user')
+            .setLabel('📢 Notificar')
+            .setStyle(ButtonStyle.Primary)
+            .setDisabled(true),
+        new ButtonBuilder()
+            .setCustomId('add-member')
+            .setLabel('➕ Adicionar Membro')
+            .setStyle(ButtonStyle.Success)
+            .setDisabled(true),
+        new ButtonBuilder()
+            .setCustomId('claim-ticket')
+            .setLabel('👤 Assumir Ticket')
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(true),
+        new ButtonBuilder()
+            .setCustomId('transcript-ticket')
+            .setLabel('📄 Transcript')
+            .setStyle(ButtonStyle.Primary)
+            .setDisabled(true),
+        new ButtonBuilder()
+            .setCustomId('close-ticket')
+            .setLabel('🔒 Fechado')
+            .setStyle(ButtonStyle.Danger)
+            .setDisabled(true)
+    );
+
+    // Atualizar mensagem original com botões desativados
+    const messages = await interaction.channel.messages.fetch({ limit: 10 });
+    const originalMessage = messages.find(msg => msg.components.length > 0);
+    
+    if (originalMessage) {
+        try {
+            await originalMessage.edit({ components: [disabledButtons] });
+        } catch (error) {
+            console.error('Erro ao desativar botões:', error);
+        }
+    }
+
+    await interaction.channel.send({ embeds: [closeEmbed] });
+    
+    // Marcar como fechado no banco de dados
+    ticketData.closed = true;
+    ticketData.closedAt = new Date();
+    ticketData.closedBy = interaction.user.id;
+    ticketDB.set(interaction.channel.id, ticketData);
+
+    await interaction.reply({ content: '✅ Ticket fechado com sucesso! O canal será deletado em 10 segundos...', ephemeral: true });
+
+    // Fechar canal após 10 segundos
+    setTimeout(async () => {
+        try {
+            await interaction.channel.delete('Ticket fechado pelo sistema');
+            ticketDB.delete(interaction.channel.id);
+        } catch (error) {
+            console.error('Erro ao deletar canal:', error);
+        }
+    }, 10000);
+}
+
+function calculateDuration(startDate) {
+    const diff = new Date() - startDate;
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    
+    if (hours > 0) {
+        return `${hours}h ${minutes}m`;
+    } else {
+        return `${minutes}m`;
     }
 }
