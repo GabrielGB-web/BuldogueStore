@@ -41,4 +41,33 @@ for (const file of eventFiles) {
 // Variáveis globais
 client.tickets = new Map();
 
+// Evento quando o bot fica online
+client.once('ready', async () => {
+  console.log(`✅ Bot conectado como ${client.user.tag}`);
+  console.log(`📊 Servidores: ${client.guilds.cache.size}`);
+  
+  client.user.setActivity('Tickets | /setup-ticket', { type: ActivityType.Watching });
+
+  // Registrar comandos slash
+  try {
+    const { REST, Routes } = require('discord.js');
+    
+    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+    
+    const commands = Array.from(client.commands.values()).map(cmd => cmd.data.toJSON());
+    
+    console.log('📡 Registrando comandos slash...');
+    
+    await rest.put(
+      Routes.applicationGuildCommands(client.user.id, process.env.GUILD_ID),
+      { body: commands }
+    );
+    
+    console.log('✅ Comandos slash registrados com sucesso!');
+  } catch (error) {
+    console.error('❌ Erro ao registrar comandos:', error);
+  }
+});
+
+// Login do bot
 client.login(process.env.DISCORD_TOKEN);
