@@ -351,3 +351,36 @@ client.login(process.env.DISCORD_TOKEN)
         console.error('❌ Erro ao fazer login:', error);
         process.exit(1);
     });
+// Verificar se o token existe
+if (!process.env.DISCORD_TOKEN) {
+    console.error('❌ ERRO: DISCORD_TOKEN não encontrado nas variáveis de ambiente!');
+    console.log('📝 Verifique no Railway: Settings → Variables → DISCORD_TOKEN');
+    process.exit(1);
+}
+
+// Verificar formato do token
+if (process.env.DISCORD_TOKEN.length < 50) {
+    console.error('❌ ERRO: Token parece estar incompleto ou inválido!');
+    console.log('🔑 O token deve ter pelo menos 50 caracteres');
+    process.exit(1);
+}
+
+console.log('🔑 Token encontrado, iniciando login...');
+console.log('📋 Dica: O token começa com:', process.env.DISCORD_TOKEN.substring(0, 10) + '...');
+
+// Iniciar bot com tratamento de erro melhorado
+client.login(process.env.DISCORD_TOKEN)
+    .then(() => {
+        console.log('✅ Login realizado com sucesso!');
+        console.log('🎉 Bot está online e funcionando!');
+    })
+    .catch(error => {
+        console.error('❌ ERRO CRÍTICO no login:');
+        console.error('💡 Possíveis causas:');
+        console.error('1. Token incorreto ou expirado');
+        console.error('2. Bot não foi convidado para o servidor');
+        console.error('3. Permissões do Gateway Intents não ativadas');
+        console.error('🔧 Solução: Verifique o token no Discord Developer Portal');
+        console.error('📋 Erro detalhado:', error.message);
+        process.exit(1);
+    });
