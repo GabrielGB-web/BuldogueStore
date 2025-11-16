@@ -1,0 +1,18 @@
+{
+  "name": "bot-ticket-discord",
+  "version": "1.0.0",
+  "description": "Bot de ticket para Discord - Compras, Dúvidas, Parcerias",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1"
+  },
+  "engines": {
+    "node": "18.x"
+  },
+  "keywords": ["discord", "bot", "ticket", "suporte"],
+  "author": "Sua Loja",
+  "license": "MIT"
+}
